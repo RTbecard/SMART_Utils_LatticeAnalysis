@@ -1,30 +1,62 @@
-
-# This is the user-interface definition of a Shiny web application.
-# You can find out more about building applications with Shiny here:
-#
-# http://shiny.rstudio.com
-#
-
 library(shiny)
 
 shinyUI(fluidPage(
 
   # Application title
-  titlePanel("Old Faithful Geyser Data"),
+  titlePanel("SMART Utilities: Gridded Analysis Workaround"),
 
   # Sidebar with a slider input for number of bins
   sidebarLayout(
     sidebarPanel(
-      sliderInput("bins",
-                  "Number of bins:",
-                  min = 1,
-                  max = 50,
-                  value = 30)
+      h4("Instructions"),
+      p("Load your exported shapefiles from a
+        SMARTpatrol query and your SMART base
+        map layer outlining the patrol regions.
+        You can then run an automated hexagon
+        lattice or square grid analysis.  For
+        the region analysis, summary statistics
+        will be done for each region with a
+        uniqe name attribute."),
+      h4("Files"),
+      p("For each shape file, select all 5
+        files types exported by SMART for
+        each upload (.dbf, .fix, .prj,
+        .shp, .shx)"),
+      
+      h4("Settings"),
+      fileInput("patrols",
+                "Patrols",
+                accept=c(".dbf", ".fix",
+                         ".prj", ".shp", ".shx"),
+                multiple = T),
+      fileInput("basemap",
+                "Area Map",
+                accept=c(".dbf", ".fix",
+                         ".prj", ".shp", ".shx"),
+                multiple = T),
+      selectInput("cellType",
+                  "Cell Type",c("Hexagon Lattice",
+                                "Square Grid"),"Hexagon lattice"),
+      conditionalPanel(
+        condition = "input.cellType == \"Square Grid\"",
+        textInput("utmZone","UTM Zone (example: \"33\")")),
+      textInput("size", "Cell Diameter (Decimal Degrees
+                for hexagon lattice, meters for square grid)"),
+      actionButton("analyse","Start Analysis"),
+      textInput("filename", "Output file name"),
+      actionButton("download","Download Results")
     ),
 
     # Show a plot of the generated distribution
     mainPanel(
-      plotOutput("distPlot")
+      tabsetPanel(
+        tabPanel("Distance Patroled/Cell",
+                 plotOutput("plot1",width = "700px",height = "700px")),
+        tabPanel("Patrol visits/Cell",
+                 plotOutput("plot2",width = "700px",height = "700px")),
+        tabPanel("Region % Patrol Coverage",
+                 plotOutput("plot3",width = "700px",height = "700px"))
+      )
     )
   )
 ))
