@@ -139,7 +139,7 @@ shinyServer(function(input, output) {
       message("Files downloaded can be
               found in the \"Results\" folder")
     }else{
-      message('You must first run an anlysis before downloading!')
+      message("You must first run an anlysis before downloading!")
     }
   })
 })
