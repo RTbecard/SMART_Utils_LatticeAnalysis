@@ -10,7 +10,7 @@ shinyUI(fluidPage(
     sidebarPanel(
       h4("Instructions"),
       p("Load your exported shapefiles from a
-        SMARTpatrol query and your SMART base
+        SMART patrol query and your SMART base
         map layer outlining the patrol regions.
         You can then run an automated hexagon
         lattice or square grid analysis.  For
@@ -24,16 +24,37 @@ shinyUI(fluidPage(
         .shp, .shx)"),
       
       h4("Settings"),
-      fileInput("patrols",
-                "Patrols",
-                accept=c(".dbf", ".fix",
-                         ".prj", ".shp", ".shx"),
-                multiple = T),
+      selectInput("analysisType",
+                  "Analysis Type",c("Patrol Cover per Region",
+                                "Encounter rates over time"),
+                  "Patrol Cover per Region"),
       fileInput("basemap",
-                "Area Map",
+                "Area Map (Shape file)",
                 accept=c(".dbf", ".fix",
                          ".prj", ".shp", ".shx"),
                 multiple = T),
+      
+      conditionalPanel(
+        condition = "input.analysisType == \"Encounter rates over time\"",
+        fileInput("metadata","Patrol metadata (.zip files)",
+                  accept=c(".zip"),
+                  multiple = T),
+        textInput("period", "Analysis periods (days)"),
+        fileInput("encounters",
+                  "Encounters (Shape file)",
+                  accept=c(".dbf", ".fix",
+                           ".prj", ".shp", ".shx"),
+                  multiple = T)),
+
+      conditionalPanel(
+                condition = "input.analysisType == \"Patrol Cover per Region\"",     
+                fileInput("patrols",
+                            "Patrols (Shape file)",
+                            accept=c(".dbf", ".fix",
+                           ".prj", ".shp", ".shx"),
+                  multiple = T)
+      ),
+
       selectInput("cellType",
                   "Cell Type",c("Hexagon Lattice",
                                 "Square Grid"),"Hexagon lattice"),
@@ -49,13 +70,16 @@ shinyUI(fluidPage(
 
     # Show a plot of the generated distribution
     mainPanel(
-      tabsetPanel(
-        tabPanel("Distance Patroled/Cell",
-                 plotOutput("plot1",width = "700px",height = "700px")),
-        tabPanel("Patrol visits/Cell",
-                 plotOutput("plot2",width = "700px",height = "700px")),
-        tabPanel("Region % Patrol Coverage",
-                 plotOutput("plot3",width = "700px",height = "700px"))
+      conditionalPanel(
+        condition = "input.analysisType == \"Patrol Cover per Region\"",
+        tabsetPanel(
+          tabPanel("Distance Patroled/Cell",
+                   plotOutput("plot1",width = "700px",height = "700px")),
+          tabPanel("Patrol visits/Cell",
+                   plotOutput("plot2",width = "700px",height = "700px")),
+          tabPanel("Region % Patrol Coverage",
+                   plotOutput("plot3",width = "700px",height = "700px"))
+        )
       )
     )
   )
