@@ -24,40 +24,21 @@ shinyUI(fluidPage(
         .shp, .shx)"),
       
       h4("Settings"),
-      selectInput("analysisType",
-                  "Analysis Type",c("Patrol Cover per Region",
-                                "Encounter rates over time"),
-                  "Patrol Cover per Region"),
       fileInput("basemap",
                 "Area Map (Shape file)",
                 accept=c(".dbf", ".fix",
                          ".prj", ".shp", ".shx"),
                 multiple = T),
-      
-      conditionalPanel(
-        condition = "input.analysisType == \"Encounter rates over time\"",
-        fileInput("metadata","Patrol metadata (.zip files)",
-                  accept=c(".zip"),
-                  multiple = T),
-        textInput("period", "Analysis periods (days)"),
-        fileInput("encounters",
-                  "Encounters (Shape file)",
-                  accept=c(".dbf", ".fix",
-                           ".prj", ".shp", ".shx"),
-                  multiple = T)),
-
-      conditionalPanel(
-                condition = "input.analysisType == \"Patrol Cover per Region\"",     
-                fileInput("patrols",
-                            "Patrols (Shape file)",
-                            accept=c(".dbf", ".fix",
-                           ".prj", ".shp", ".shx"),
-                  multiple = T)
-      ),
+      fileInput("patrols",
+                "Patrols (Shape file)",
+                accept=c(".dbf", ".fix",
+                         ".prj", ".shp", ".shx"),
+                multiple = T),
 
       selectInput("cellType",
                   "Cell Type",c("Hexagon Lattice",
                                 "Square Grid"),"Hexagon lattice"),
+      textInput("regionName","Attribute name defining regions"),
       conditionalPanel(
         condition = "input.cellType == \"Square Grid\"",
         textInput("utmZone","UTM Zone (example: \"33\")")),
@@ -70,17 +51,15 @@ shinyUI(fluidPage(
 
     # Show a plot of the generated distribution
     mainPanel(
-      conditionalPanel(
-        condition = "input.analysisType == \"Patrol Cover per Region\"",
-        tabsetPanel(
+      tabsetPanel(
           tabPanel("Distance Patroled/Cell",
                    plotOutput("plot1",width = "700px",height = "700px")),
           tabPanel("Patrol visits/Cell",
                    plotOutput("plot2",width = "700px",height = "700px")),
           tabPanel("Region % Patrol Coverage",
                    plotOutput("plot3",width = "700px",height = "700px"))
-        )
+          )
       )
     )
   )
-))
+)

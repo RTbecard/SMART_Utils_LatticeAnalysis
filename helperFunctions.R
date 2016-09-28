@@ -53,6 +53,11 @@ createLattice <- function(map,cellDiameter,cellType,zone){
                                           area = gArea(cellLattice,byid = T)))
   ## Show size of each cell (proofing)
   #spplot(cellLattice,zcol = "area")
+  
+  ## Add ID column to celllattice
+  cellLattice$fID <- 1:NROW(cellLattice)
+  
+  message(NROW(cellLattice), ' squares/cells created.')
   return(cellLattice)
 }
 
@@ -71,142 +76,153 @@ patrolVisitsPerCell <- function(patrols, cellLattice,cellType,zone){
     ## Calc patrol coverage metrics
   #spplot(patrols,zcol = "Patrol_ID",scales = list(draw = T))
   patrol.list <- list()
-  # loop through each named region of map
-  message("Creating cells for each patrol...")
+  # loop through each patrol and count cells visited
+  message("Counting cell visits by patrols...")
+
+  cellVisits <- c()
   for(i in unique(patrols@data$Patrol_ID)){
     ## Subset single patrol
     patrol <- subset(patrols,Patrol_ID == i)
     #  spplot(patrol,zcol = "Patrol_ID")
     #  spplot(patrols,zcol = "Patrol_ID")
-    ## Load single patrol info into lattice data.frame
+    ## Load single patrol info into lattice
     patrol.cover <- over(cellLattice,patrol)
-    temp <- cellLattice
-    temp@data <- as.data.frame(cbind(name = cellLattice@data$name,
-                                     Patrol_ID = patrol.cover[,c("Patrol_ID")],
-                                     Team = patrol.cover[,c("Team")]),
-                               row.names = sapply(slot(cellLattice, "polygons"),
-                                                  function(x) slot(x, "ID")))
-    patrol.list[[1 + length(patrol.list)]] <- subset(temp,!is.na(Patrol_ID))
-  }
-  
-  #spplot(patrol.list[[1]],zcol = "Patrol_ID",scales = list(draw = T))
-  #spplot(patrol.list[[2]],zcol = "Patrol_ID",scales = list(draw = T))
-  
-  message("Merging all patrol coverages into single object")
-  patrol.cover.all <- patrol.list[[1]]
-  patrol.cover.merge <- patrol.list[[1]]
-  if(length(patrol.list) > 1){
-    for(i in 2:length(patrol.list)){
-      patrol.cover.all <- rbind(patrol.cover.all,
-                                patrol.list[[i]],
-                                makeUniqueIDs = TRUE)
-      patrol.cover.merge <- gUnion(patrol.cover.all,
-                                   patrol.list[[i]])
+    if(NROW(patrol.cover) > 1){ ## Skip if patrol was outside of lattice
+      ## append FID value from lattice
+      patrol.cover$fID <- cellLattice$fID
+      ## Filter out NA patrols
+      patrol.cover.filtered <- patrol.cover[which(!is.na(patrol.cover$fid)),]
+      ## Save IDs of cells visited
+      cellVisits <- append(cellVisits,patrol.cover.filtered$fID)
     }
   }
   
-  ## Count number of visits to each cell by all patrols
-  centroids <- SpatialPoints(getSpPPolygonsLabptSlots(cellLattice),
-                             proj4string = CRS(proj4string(cellLattice)))
-  temp <- as.numeric(sapply(over(centroids,patrol.cover.all,
-                                 returnList = TRUE),
-                            FUN = function(x){nrow(x)}))
-  Number.of.visits <- cellLattice
-  cellLattice@data <- as.data.frame(cbind(name = cellLattice@data,
-                                          Patrol.Visits = temp),
-                                    row.names = sapply(slot(cellLattice, "polygons"),
-                                                       function(x) slot(x, "ID")))
-  #spplot(cellLattice,zcol = "Patrol.Visits",main = "Visits by patrols")
+  visits.table <- as.data.frame(table(cellVisits))
+  names(visits.table) <- c('fID','visits')
+  
+  temp.data <- base::merge(cellLattice@data,visits.table,by = 'fID',all.x = T)
+  temp.data$visits[which(is.na(temp.data$visits))] <- 0
+  cellLattice@data <- temp.data
   
   return(cellLattice)
 }
 
-patrolCoverage <- function(cellLattice){
+patrolCoverage <- function(cellLattice,regionName){
   
   require(raster)
   
   cellLattice@data$Percent.coverage <- NA
-  for(i in unique(cellLattice@data$name.name)){
-    # calc percent coverage per region
-    temp <- subset(cellLattice@data,name.name == i)
-    area.total <- sum(temp$name.area)
-    area.patrolled <- sum(subset(temp,Patrol.Visits > 0)$name.area)
+  ## Convert region names to character values
+  cellLattice@data[,regionName] <- as.character(cellLattice@data[,regionName])  
+  for(i in unique(cellLattice@data[,regionName])){
+    # Subset region
+    idx <- which(cellLattice@data[,regionName] == i)
+    region <- cellLattice@data[idx,]
+    ## Find total region area
+    area.total <- sum(region$area)
+    ## Find total region area with at least 1 patrol
+    area.patrolled <- sum(subset(region,visits > 0)$area)
     coverage <- area.patrolled*100/area.total
     #Save results to lattice
-    idx <- which(cellLattice$name.name == i)
     cellLattice[idx,"Percent.coverage"] <- coverage
   }
   
   # Calc percent coverage in total area
-  area.total <- sum(cellLattice@data$name.area)
-  area.patrolled <- sum(subset(temp,Patrol.Visits > 0)$name.area)
+  area.total <- sum(cellLattice@data$area)
+  idx <- which(cellLattice@data$visits > 0)
+  area.patrolled <- sum(cellLattice@data$area[idx])
   coverage <- area.patrolled*100/area.total
   # Save results to value
   TotalAreaCovered <- coverage
   
   #spplot(cellLattice,zcol = "Percent.coverage",
   #                         scales = list(draw = T))
-  return(cellLattice)
+ resultsTable <- unique(cellLattice@data[,c(regionName,'Percent.coverage')])
+ resultsTable[NROW(resultsTable) + 1,1] <- "All Regions"
+ resultsTable[NROW(resultsTable),2] <- coverage
+ 
+ print(resultsTable)
+ return(list(cellLattice = cellLattice,resultsTable = resultsTable))
 }
 
 distancePatrolled <- function(patrols, cellLattice){
-
   require(raster)
+  ## Make empty results table
+  distancePatrolled <- data.frame(fID = vector(mode = 'character'),distance = vector(mode = 'numeric'))
+  ## Loop through each patrol (saves memory for analyses with many patrols)
+  patrol.ids <- unique(patrols@data$Patrol_ID)
+  prgs <- 0
   
-  # Split lines by polygons
-  lines.split <- gIntersection(cellLattice,
-                               patrols,byid = T,
-                               drop_lower_td = F)
-  #plot(lines.split)
-  #plot(patrols)
+  message('Chopping patrols with the grid/lattice and measuring the resulting distances...')
+  for(i in patrol.ids){
+    setTxtProgressBar(txtProgressBar(min = 0,max = length(patrol.ids),style = 3,width = 20),value = prgs)
+    patrol.sub <- subset(patrols,Patrol_ID == i)
+      
+    # Split lines by patrol lines according to grid/lattice
+    lines.split <- gIntersection(cellLattice,
+                                 patrol.sub,byid = T,
+                                 drop_lower_td = F)
+    
+    if(!is.null(lines.split)){ # skip if patrols is outside CA
+      ## Get grid cell value for each patrol line
+      ids <- over(lines.split,cellLattice)$fID
+      ## Append cell/grid id to line segments
+      lines.split$fID <- ids
+      
+      # Calculate line lengths
+      lines.split$distance <- sapply(lines.split@lines,
+                                     FUN = function(x){
+                                       length = LinesLength(x,longlat = T)
+                                     })
+      
+      #spplot(lines.split,zcol = "distance")  Use this to check line distances are correct
+      
+      # Save line lenghts
+      distancePatrolled <- rbind(distancePatrolled,lines.split@data)
+      prgs = prgs + 1
+    }
+  }
   
-  # Calculate line lengths
-  lineLengths <- sapply(lines.split@lines,
-                        FUN = function(x){cbind(length = LinesLength(x,
-                                                                     longlat = T), ID = x@ID)})
-  lines.distances <- SpatialLinesDataFrame(lines.split,
-                                           data = data.frame(length =as.numeric(lineLengths[1,]),
-                                                             row.names = lineLengths[2,]))
-  #spplot(lines.distances,zcol = "length")
-  # Sum line lengths for each cell
-  lines.distances.cell <- over(cellLattice,lines.distances,returnList = T)
-  lines.distances.cell.sum <- sapply(lines.distances.cell,
-                                     FUN = function(x){sum(x$length)})
-  cellLattice@data <- cbind(cellLattice@data,
-                            distance.patrolled = lines.distances.cell.sum)
-  #spplot(cellLattice,zcol = "distance.patrolled",
-  #             main = "Distance Patrolled per Cell",scales = list(draw = T))
+  message('Summing patrol distance per grid/lattice cell')
+  
+  ## Aggregate line lengths (sum values for common cells/squares)
+  distancePatrolled.aggr <- stats::aggregate(distance ~ fID,data = distancePatrolled,FUN = 'sum')
+  
+  ## Copy results to lattice/grid
+  cellLattice@data <- merge(cellLattice@data, distancePatrolled.aggr[,c('fID','distance')],by = 'fID',all.x = T)
+  
+  ## Set NA values to 0
+  cellLattice@data$distance[is.na(cellLattice@data$distance)] <- 0
   
   return(cellLattice)
 }
 
-PatrolCoverage <- function(patrols,map,cellDiameter,cellType,zone){
+PatrolCoverage <- function(patrols,map,cellDiameter,cellType,zone,regionName){
   ## Calculate patrol coverage and effort per cell
 
   # Create gridded/latticed cells over conservation area
+  message('---Create Lattice/Grid---')
   cellLattice <- createLattice(map,cellDiameter,cellType,zone)
   # Calculate patrol visits per cell
+  message('---Calculate patrol visits per cell---')
   cellLattice <- patrolVisitsPerCell(patrols, cellLattice, cellType, zone)
   # Calculate percent patrol cover per region
-  cellLattice <- patrolCoverage(cellLattice)
+  message('---Calculate Patrol Coverage per region---')
+  ## check if there is a user specified attribute identifying region
+  resultsTable = NULL
+  if(regionName %in% names(cellLattice) == T){ 
+    results <- patrolCoverage(cellLattice,regionName)
+    cellLattice <- results$cellLattice
+    resultsTable <- results$resultsTable
+  }else{
+    message('Region name not found.  Skipping patrol cover per region anallysis.  Avaialble columns in attribute table: ',paste(names(cellLattice),collapse = ', '))
+  }
   # Calculate distance patrolled per cell
+  message('---Calculate distance patroled in each cell/square---')
   cellLattice <- distancePatrolled(patrols, cellLattice)
-  return(list(cellLattice))
-}
-
-EncounterRates <- function(patrol.points,patrol.tracks,map,cellDiameter,cellType,zone){
-  ## Calculate patrol coverage and effort per cell
+  message('---Analysis Complete---')
   
-  # Create gridded/latticed cells over conservation area
-  cellLattice <- createLattice(map,cellDiameter,cellType,zone)
-  # Calculate patrol visits per cell
-  cellLattice <- patrolVisitsPerCell(patrol.tracks, cellLattice, cellType, zone)
-  # Calculate percent patrol cover per region
-  cellLattice <- patrolCoverage(cellLattice)
-  # Calculate distance patrolled per cell
-  cellLattice <- distancePatrolled(patrols, cellLattice)
-  
-  return(list(cellLattice))
+  return(list(shapeFile = cellLattice,resultsTable = resultsTable))
 }
 
 ## Load patrol data from a vector of ziplife locations
