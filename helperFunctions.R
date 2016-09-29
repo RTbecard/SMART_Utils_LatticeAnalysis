@@ -1,31 +1,45 @@
-createLattice <- function(map,cellDiameter,cellType,zone){
+createLattice <- function(map,cellDiameter,cellType,zone,regionName){
   #################################################
   ####### Create cells over patrol regions ########
   #################################################
   require(raster)
   
-  ## Set projection for map
-  proj <- CRS("+proj=longlat +datum=WGS84")
+  ## Set projection for map (no projection)
+  if(cellType == "Hexagon Lattice"){
+    proj <- CRS("+proj=longlat +datum=WGS84")
+  }else{
+    proj <- CRS(paste0("+proj=utm +zone=",zone,"+datum=WGS84"))
+  }
+  
+  ## Create bounding rectangle for CA (in lat/long)
+  map <- spTransform(map,CRSobj = proj)  ## Project to correct units
+  ext <- extent(map) ## Extract extents
+  ## Add margins to extents
+  ext@xmin <- ext@xmin - cellDiameter
+  ext@xmax <- ext@xmax + cellDiameter
+  ext@ymin <- ext@ymin - cellDiameter
+  ext@xmax <- ext@xmax + cellDiameter
+  bb <- as(ext, "SpatialPolygons")
+  proj4string(bb) <- proj@projargs
   
   if(cellType == "Hexagon Lattice"){
     #Create hexagons for whole area
-    HexPts <-spsample(map,type="hexagonal",cellsize = cellDiameter)
+    HexPts <-spsample(bb,type="hexagonal",cellsize = cellDiameter)
     HexPols <- HexPoints2SpatialPolygons(HexPts)
   }else if(cellType == "Square Grid"){
     if(missing(zone)){stop("Must enter UTM 
                            \"zone\" for Square Grid analysis")}
     proj <- CRS(paste0("+proj=utm +zone=",zone,"+datum=WGS84"))
-    map <- spTransform(map,proj)
     ## Create square grid for area
-    grd <-spsample(map,type="regular",cellsize = cellDiameter)
+    grd <-spsample(bb,type="regular",cellsize = cellDiameter)
     HexPols <- as.SpatialPolygons.GridTopology(points2grid(grd),
                                                proj4string = proj) 
   }
   cell.list <- list()
   # loop through each named region of map
   message("Creating cells for each region...")
-  for(i in unique(map@data$name)){
-    region <- subset(map,name == i)
+  for(i in unique(map@data[,regionName])){
+    region <- map[map@data[,regionName] == i,]
     #spplot(region,zcol = "name")
     hex.crop <- gIntersection(HexPols, region, byid=TRUE)
     #plot(hex.crop)
@@ -62,29 +76,21 @@ createLattice <- function(map,cellDiameter,cellType,zone){
 }
 
 patrolVisitsPerCell <- function(patrols, cellLattice,cellType,zone){
-  
-  ########################################
-  ######## Patrol visits per cell ########
-  ########################################
-  
-  require(raster)
-  
-  ## Transform patrols into matching projection with base map
-  proj <- CRS("+proj=longlat +datum=WGS84")
-  if(cellType == "Square Grid"){patrols <- spTransform(patrols,proj)}
 
-    ## Calc patrol coverage metrics
-  #spplot(patrols,zcol = "Patrol_ID",scales = list(draw = T))
+  require(raster)
+
+  ## Calc patrol coverage metrics
   patrol.list <- list()
   # loop through each patrol and count cells visited
   message("Counting cell visits by patrols...")
-
+  
   cellVisits <- c()
-  for(i in unique(patrols@data$Patrol_ID)){
+  prgs <- 0
+  patrol.id <- unique(patrols@data$Patrol_ID)
+  for(i in patrol.id){
+    setTxtProgressBar(txtProgressBar(min = 0,max = length(patrol.id),style = 3,width = 20),value = prgs)
     ## Subset single patrol
     patrol <- subset(patrols,Patrol_ID == i)
-    #  spplot(patrol,zcol = "Patrol_ID")
-    #  spplot(patrols,zcol = "Patrol_ID")
     ## Load single patrol info into lattice
     patrol.cover <- over(cellLattice,patrol)
     if(NROW(patrol.cover) > 1){ ## Skip if patrol was outside of lattice
@@ -95,6 +101,7 @@ patrolVisitsPerCell <- function(patrols, cellLattice,cellType,zone){
       ## Save IDs of cells visited
       cellVisits <- append(cellVisits,patrol.cover.filtered$fID)
     }
+    prgs <- prgs + 1
   }
   
   visits.table <- as.data.frame(table(cellVisits))
@@ -114,7 +121,9 @@ patrolCoverage <- function(cellLattice,regionName){
   cellLattice@data$Percent.coverage <- NA
   ## Convert region names to character values
   cellLattice@data[,regionName] <- as.character(cellLattice@data[,regionName])  
-  for(i in unique(cellLattice@data[,regionName])){
+  
+  regions <- unique(cellLattice@data[,regionName])
+  for(i in regions){
     # Subset region
     idx <- which(cellLattice@data[,regionName] == i)
     region <- cellLattice@data[idx,]
@@ -162,7 +171,6 @@ distancePatrolled <- function(patrols, cellLattice){
     lines.split <- gIntersection(cellLattice,
                                  patrol.sub,byid = T,
                                  drop_lower_td = F)
-    
     if(!is.null(lines.split)){ # skip if patrols is outside CA
       ## Get grid cell value for each patrol line
       ids <- over(lines.split,cellLattice)$fID
@@ -197,12 +205,25 @@ distancePatrolled <- function(patrols, cellLattice){
   return(cellLattice)
 }
 
-PatrolCoverage <- function(patrols,map,cellDiameter,cellType,zone,regionName){
-  ## Calculate patrol coverage and effort per cell
+PatrolCoverage <- function(patrols,map,cellDiameter,cellType,zone,regionName,cellLattice){
 
   # Create gridded/latticed cells over conservation area
-  message('---Create Lattice/Grid---')
-  cellLattice <- createLattice(map,cellDiameter,cellType,zone)
+  if(is.null(cellLattice)){
+    message('---Create Lattice/Grid---')
+    cellLattice <- createLattice(map,cellDiameter,cellType,zone,regionName)
+  }
+  
+  message('---Standardizing projections---')
+  message('Projection: ', proj4string(cellLattice))
+  if(!identicalCRS(patrols,cellLattice)){
+    message('Transforming patrols layer to correct projection...')
+    patrols <- spTransform(patrols,CRSobj = CRS(proj4string(cellLattice)))
+  }
+  if(!identicalCRS(map,cellLattice)){
+    message('Transforming basemap layer to correct projection...')
+    map <- spTransform(map,CRSobj = CRS(proj4string(cellLattice)))
+  }
+  
   # Calculate patrol visits per cell
   message('---Calculate patrol visits per cell---')
   cellLattice <- patrolVisitsPerCell(patrols, cellLattice, cellType, zone)

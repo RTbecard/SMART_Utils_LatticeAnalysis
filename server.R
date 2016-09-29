@@ -26,10 +26,9 @@ shinyServer(function(input, output) {
     input$basemap
   })
 
-  metadata <- reactive({
-    input$metadata
+  grid <- reactive({
+    input$grid
   })
-  
     
   zone <- reactive({
     input$utmZone
@@ -38,7 +37,6 @@ shinyServer(function(input, output) {
   regionName <- reactive({
     input$regionName
   })
-  
   
   filename <- reactive({
     input$filename
@@ -52,31 +50,33 @@ shinyServer(function(input, output) {
     return(as.numeric(input$size))
   })
   
-  period <- reactive({
-    return(as.numeric(input$period))
-  })
-    
   observeEvent(input$analyse, {
-  message("Preparing Files")
-  
-  ## Load area map
-  renameShapeFiles(basemap()$name,basemap()$datapath)
-  map <- loadShapeFile(basemap()$name)
-
+    message("---Loading Files---")
+    
+    ## Load area map
+    renameShapeFiles(basemap()$name,basemap()$datapath)
+    map <- loadShapeFile(basemap()$name)
   
     ## Load patrol data
     renameShapeFiles(patrols.in()$name,patrols.in()$datapath)
     patrol <- loadShapeFile(patrols.in()$name)
+  
+    ## Load user defined grid data
+    grid <- NULL
+    if(cellType() == 'User Defined'){
+      renameShapeFiles(grid()$name,grid()$datapath)
+      grid <- loadShapeFile(grid()$name)}
+        
     ## Run analysis
     message("Running Analysis... Please wait.")
     assign('results', PatrolCoverage(patrols = patrol,
-                                         map = map,
-                                         cellDiameter = size(),
-                                         cellType = cellType(),
-                                         zone = zone(),
-                                         regionName = regionName())
+                                     map = map,
+                                     cellDiameter = size(),
+                                     cellType = cellType(),
+                                     zone = zone(),
+                                     regionName = regionName(),
+                                     cellLattice = grid)
                ,envir = .GlobalEnv)
-    message("Plotting results...")
     
     ## Plot results
     output$plot1 <- renderPlot(spplot(results[[1]],
