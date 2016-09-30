@@ -4,6 +4,11 @@ createLattice <- function(map,cellDiameter,cellType,zone,regionName){
   #################################################
   require(raster)
   
+  if(!regionName %in% names(map)){
+    message('Region name not found.  Entire CA is treated as a single region.  Avaialble columns in attribute table: ',paste(names(map),collapse = ', '))
+    regionName <- ''
+  }
+  
   ## Set projection for map (no projection)
   if(cellType == "Hexagon Lattice"){
     proj <- CRS("+proj=longlat +datum=WGS84")
@@ -38,28 +43,40 @@ createLattice <- function(map,cellDiameter,cellType,zone,regionName){
   cell.list <- list()
   # loop through each named region of map
   message("Creating cells for each region...")
-  for(i in unique(map@data[,regionName])){
-    region <- map[map@data[,regionName] == i,]
-    #spplot(region,zcol = "name")
-    hex.crop <- gIntersection(HexPols, region, byid=TRUE)
-    #plot(hex.crop)
-    hpdf <- SpatialPolygonsDataFrame(hex.crop,
-                               data = data.frame(name = factor(rep(i,length(hex.crop))),
-                                         row.names = sapply(slot(hex.crop,
-                                                           "polygons"),
-                                                      function(x) slot(x, "ID"))),
-                               match.ID = T)
-    ## Save region cells into list object
-    cell.list[[length(cell.list) + 1]] <- hpdf
-  }
-  ## Merge regions into single object
-  message("Merging regions into single object")
-  cellLattice <- cell.list[[1]]
-  if(length(cell.list) > 1){
-    for(i in 2:length(cell.list)){
-      cellLattice <- rbind(cellLattice,cell.list[[i]])
+  if(regionName != ''){ ## Loop through all regions if correct name specified
+    for(i in unique(map@data[,regionName])){
+      region <- map[map@data[,regionName] == i,]
+      #spplot(region,zcol = "name")
+      hex.crop <- gIntersection(HexPols, region, byid=TRUE)
+      #plot(hex.crop)
+      hpdf <- SpatialPolygonsDataFrame(hex.crop,
+                                       data = data.frame(name = factor(rep(i,length(hex.crop))),
+                                                         row.names = sapply(slot(hex.crop,
+                                                                                 "polygons"),
+                                                                            function(x) slot(x, "ID"))),
+                                       match.ID = T)
+      ## Save region cells into list object
+      cell.list[[length(cell.list) + 1]] <- hpdf
     }
+    ## Merge regions into single object
+    message("Merging regions into single object")
+    cellLattice <- cell.list[[1]]
+    if(length(cell.list) > 1){
+      for(i in 2:length(cell.list)){
+        cellLattice <- rbind(cellLattice,cell.list[[i]])
+      }
+    }
+  }else{ ## If no region specified, treat CA as a single region
+    regionName = 'name'
+    hex.crop <- gIntersection(HexPols, map, byid=TRUE)
+    cellLattice <- SpatialPolygonsDataFrame(hex.crop,
+                             data = data.frame(name = factor(rep('1',length(hex.crop))),
+                                               row.names = sapply(slot(hex.crop,"polygons"),
+                                                                  function(x) slot(x, "ID"))),
+                             match.ID = T)
   }
+  
+  
   #spplot(cellLattice)
   
   ## Calculate area for each cell
@@ -71,21 +88,23 @@ createLattice <- function(map,cellDiameter,cellType,zone,regionName){
   ## Add ID column to celllattice
   cellLattice$fID <- 1:NROW(cellLattice)
   
+  ## Rename region attribute to proper name
+  names(cellLattice@data)[1] <- regionName
+  
   message(NROW(cellLattice), ' squares/cells created.')
-  return(cellLattice)
+  return(list(lattice = cellLattice,region = regionName))
 }
 
 patrolVisitsPerCell <- function(patrols, cellLattice,cellType,zone){
 
   require(raster)
-
   ## Calc patrol coverage metrics
   patrol.list <- list()
   # loop through each patrol and count cells visited
   message("Counting cell visits by patrols...")
   
   cellVisits <- c()
-  prgs <- 0
+  prgs <- 1
   patrol.id <- unique(patrols@data$Patrol_ID)
   for(i in patrol.id){
     setTxtProgressBar(txtProgressBar(min = 0,max = length(patrol.id),style = 3,width = 20),value = prgs)
@@ -93,7 +112,7 @@ patrolVisitsPerCell <- function(patrols, cellLattice,cellType,zone){
     patrol <- subset(patrols,Patrol_ID == i)
     ## Load single patrol info into lattice
     patrol.cover <- over(cellLattice,patrol)
-    if(NROW(patrol.cover) > 1){ ## Skip if patrol was outside of lattice
+    if(NROW(patrol.cover) > 0){ ## Skip if patrol was outside of lattice
       ## append FID value from lattice
       patrol.cover$fID <- cellLattice$fID
       ## Filter out NA patrols
@@ -117,7 +136,6 @@ patrolVisitsPerCell <- function(patrols, cellLattice,cellType,zone){
 patrolCoverage <- function(cellLattice,regionName){
   
   require(raster)
-  
   cellLattice@data$Percent.coverage <- NA
   ## Convert region names to character values
   cellLattice@data[,regionName] <- as.character(cellLattice@data[,regionName])  
@@ -160,7 +178,7 @@ distancePatrolled <- function(patrols, cellLattice){
   distancePatrolled <- data.frame(fID = vector(mode = 'character'),distance = vector(mode = 'numeric'))
   ## Loop through each patrol (saves memory for analyses with many patrols)
   patrol.ids <- unique(patrols@data$Patrol_ID)
-  prgs <- 0
+  prgs <- 1
   
   message('Chopping patrols with the grid/lattice and measuring the resulting distances...')
   for(i in patrol.ids){
@@ -206,11 +224,13 @@ distancePatrolled <- function(patrols, cellLattice){
 }
 
 PatrolCoverage <- function(patrols,map,cellDiameter,cellType,zone,regionName,cellLattice){
-
   # Create gridded/latticed cells over conservation area
   if(is.null(cellLattice)){
     message('---Create Lattice/Grid---')
-    cellLattice <- createLattice(map,cellDiameter,cellType,zone,regionName)
+    
+    out <- createLattice(map,cellDiameter,cellType,zone,regionName)
+    cellLattice <- out$lattice
+    regionName <- out$region
   }
   
   message('---Standardizing projections---')
@@ -229,15 +249,10 @@ PatrolCoverage <- function(patrols,map,cellDiameter,cellType,zone,regionName,cel
   cellLattice <- patrolVisitsPerCell(patrols, cellLattice, cellType, zone)
   # Calculate percent patrol cover per region
   message('---Calculate Patrol Coverage per region---')
-  ## check if there is a user specified attribute identifying region
-  resultsTable = NULL
-  if(regionName %in% names(cellLattice) == T){ 
-    results <- patrolCoverage(cellLattice,regionName)
-    cellLattice <- results$cellLattice
-    resultsTable <- results$resultsTable
-  }else{
-    message('Region name not found.  Skipping patrol cover per region anallysis.  Avaialble columns in attribute table: ',paste(names(cellLattice),collapse = ', '))
-  }
+  results <- patrolCoverage(cellLattice,regionName)
+  cellLattice <- results$cellLattice
+  resultsTable <- results$resultsTable
+
   # Calculate distance patrolled per cell
   message('---Calculate distance patroled in each cell/square---')
   cellLattice <- distancePatrolled(patrols, cellLattice)
