@@ -1,4 +1,4 @@
-createLattice <- function(map,cellDiameter,cellType,zone,regionName){
+createLattice <- function(map,cellDiameter,cellType,zone,regionName,cellLattice){
   #################################################
   ####### Create cells over patrol regions ########
   #################################################
@@ -9,75 +9,79 @@ createLattice <- function(map,cellDiameter,cellType,zone,regionName){
     regionName <- ''
   }
   
-  ## Set projection for map (no projection)
-  if(cellType == "Hexagon Lattice"){
-    proj <- CRS("+proj=longlat +datum=WGS84")
-  }else{
-    proj <- CRS(paste0("+proj=utm +zone=",zone,"+datum=WGS84"))
-  }
-  
-  ## Create bounding rectangle for CA (in lat/long)
-  map <- spTransform(map,CRSobj = proj)  ## Project to correct units
-  ext <- extent(map) ## Extract extents
-  ## Add margins to extents
-  ext@xmin <- ext@xmin - cellDiameter
-  ext@xmax <- ext@xmax + cellDiameter
-  ext@ymin <- ext@ymin - cellDiameter
-  ext@xmax <- ext@xmax + cellDiameter
-  bb <- as(ext, "SpatialPolygons")
-  proj4string(bb) <- proj@projargs
-  
-  if(cellType == "Hexagon Lattice"){
-    #Create hexagons for whole area
-    HexPts <-spsample(bb,type="hexagonal",cellsize = cellDiameter)
-    HexPols <- HexPoints2SpatialPolygons(HexPts)
-  }else if(cellType == "Square Grid"){
-    if(missing(zone)){stop("Must enter UTM 
+  ## Check if grid/lattice supplied by user
+  if(is.null(cellLattice)){ ## Create new grid/lattice
+    ## Set projection for map (no projection)
+    if(cellType == "Hexagon Lattice"){
+      proj <- CRS("+proj=longlat +datum=WGS84")
+    }else{
+      proj <- CRS(paste0("+proj=utm +zone=",zone,"+datum=WGS84"))
+    }
+    
+    ## Create bounding rectangle for CA (in lat/long)
+    map <- spTransform(map,CRSobj = proj)  ## Project to correct units
+    ext <- extent(map) ## Extract extents
+    ## Add margins to extents
+    ext@xmin <- ext@xmin - cellDiameter
+    ext@xmax <- ext@xmax + cellDiameter
+    ext@ymin <- ext@ymin - cellDiameter
+    ext@xmax <- ext@xmax + cellDiameter
+    bb <- as(ext, "SpatialPolygons")
+    proj4string(bb) <- proj@projargs
+    
+    ## Create grid/lattice within bounding box
+    if(cellType == "Hexagon Lattice"){
+      #Create hexagons for whole area
+      HexPts <-spsample(bb,type="hexagonal",cellsize = cellDiameter)
+      HexPols <- HexPoints2SpatialPolygons(HexPts)
+    }else if(cellType == "Square Grid"){
+      if(missing(zone)){stop("Must enter UTM 
                            \"zone\" for Square Grid analysis")}
-    proj <- CRS(paste0("+proj=utm +zone=",zone,"+datum=WGS84"))
-    ## Create square grid for area
-    grd <-spsample(bb,type="regular",cellsize = cellDiameter)
-    HexPols <- as.SpatialPolygons.GridTopology(points2grid(grd),
-                                               proj4string = proj) 
+      proj <- CRS(paste0("+proj=utm +zone=",zone,"+datum=WGS84"))
+      ## Create square grid for area
+      grd <-spsample(bb,type="regular",cellsize = cellDiameter)
+      HexPols <- as.SpatialPolygons.GridTopology(points2grid(grd),
+                                                 proj4string = proj) 
+    }
+  }else{  ## Use user defind grid
+    HexPols <- cellLattice
   }
+  
+  ### Create regions for clipping
+  if(regionName == ''){ ## Define a single region
+    regionName <- 'name'
+    map@data$name <- '1'
+  }
+  ### Dissolve features with similar regionNames
+  map <- unionSpatialPolygons(map,IDs = map@data$name)
+  map <- SpatialPolygonsDataFrame(map,data = data.frame(name = names(map),row.names = names(map)))
+  names(map)[1] <- regionName
+  
+  ## Chop grid\lattice based on region ID's
   cell.list <- list()
-  # loop through each named region of map
   message("Creating cells for each region...")
-  if(regionName != ''){ ## Loop through all regions if correct name specified
-    for(i in unique(map@data[,regionName])){
-      region <- map[map@data[,regionName] == i,]
-      #spplot(region,zcol = "name")
-      hex.crop <- gIntersection(HexPols, region, byid=TRUE)
-      #plot(hex.crop)
-      hpdf <- SpatialPolygonsDataFrame(hex.crop,
-                                       data = data.frame(name = factor(rep(i,length(hex.crop))),
-                                                         row.names = sapply(slot(hex.crop,
-                                                                                 "polygons"),
-                                                                            function(x) slot(x, "ID"))),
-                                       match.ID = T)
-      ## Save region cells into list object
-      cell.list[[length(cell.list) + 1]] <- hpdf
-    }
-    ## Merge regions into single object
-    message("Merging regions into single object")
-    cellLattice <- cell.list[[1]]
-    if(length(cell.list) > 1){
-      for(i in 2:length(cell.list)){
-        cellLattice <- rbind(cellLattice,cell.list[[i]])
-      }
-    }
-  }else{ ## If no region specified, treat CA as a single region
-    regionName = 'name'
-    hex.crop <- gIntersection(HexPols, map, byid=TRUE)
-    cellLattice <- SpatialPolygonsDataFrame(hex.crop,
-                             data = data.frame(name = factor(rep('1',length(hex.crop))),
-                                               row.names = sapply(slot(hex.crop,"polygons"),
-                                                                  function(x) slot(x, "ID"))),
-                             match.ID = T)
+  for(i in unique(map@data[,regionName])){
+    region <- map[map@data[,regionName] == i,]
+    #spplot(region,zcol = "name")
+    hex.crop <- gIntersection(HexPols, region, byid=TRUE)
+    #plot(hex.crop)
+    hpdf <- SpatialPolygonsDataFrame(hex.crop,
+                                     data = data.frame(name = factor(rep(i,length(hex.crop))),
+                                                       row.names = sapply(slot(hex.crop,
+                                                                               "polygons"),
+                                                                          function(x) slot(x, "ID"))),
+                                     match.ID = T)
+    ## Save region cells into list object
+    cell.list[[length(cell.list) + 1]] <- hpdf
   }
-  
-  
-  #spplot(cellLattice)
+  ## Merge regions into single object
+  message("Merging regions into single object")
+  cellLattice <- cell.list[[1]]
+  if(length(cell.list) > 1){
+    for(i in 2:length(cell.list)){
+      cellLattice <- rbind(cellLattice,cell.list[[i]])
+    }
+  }
   
   ## Calculate area for each cell
   cellLattice@data <- as.data.frame(cbind(cellLattice@data,
@@ -112,7 +116,7 @@ patrolVisitsPerCell <- function(patrols, cellLattice,cellType,zone){
     patrol <- subset(patrols,Patrol_ID == i)
     ## Load single patrol info into lattice
     patrol.cover <- over(cellLattice,patrol)
-    if(NROW(patrol.cover) > 0){ ## Skip if patrol was outside of lattice
+    if(NROW(patrol.cover) > 1){ ## Skip if patrol was outside of lattice
       ## append FID value from lattice
       patrol.cover$fID <- cellLattice$fID
       ## Filter out NA patrols
@@ -225,13 +229,10 @@ distancePatrolled <- function(patrols, cellLattice){
 
 PatrolCoverage <- function(patrols,map,cellDiameter,cellType,zone,regionName,cellLattice){
   # Create gridded/latticed cells over conservation area
-  if(is.null(cellLattice)){
-    message('---Create Lattice/Grid---')
-    
-    out <- createLattice(map,cellDiameter,cellType,zone,regionName)
-    cellLattice <- out$lattice
-    regionName <- out$region
-  }
+  message('---Create Lattice/Grid---')
+  out <- createLattice(map,cellDiameter,cellType,zone,regionName,cellLattice)
+  cellLattice <- out$lattice
+  regionName <- out$region
   
   message('---Standardizing projections---')
   message('Projection: ', proj4string(cellLattice))

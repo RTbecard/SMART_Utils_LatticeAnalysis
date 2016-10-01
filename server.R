@@ -4,7 +4,7 @@ require(rgdal)
 require(rgeos)
 require(shiny)
 require(XML)
-
+require(maptools)
 ## Source external functions
 source("helperFunctions.R",local = T)
 
