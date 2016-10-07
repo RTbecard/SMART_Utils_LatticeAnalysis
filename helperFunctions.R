@@ -109,11 +109,16 @@ patrolVisitsPerCell <- function(patrols, cellLattice,cellType,zone){
   
   cellVisits <- c()
   prgs <- 1
-  patrol.id <- unique(patrols@data$Patrol_ID)
+  patrol.id <- unique.patrols(patrols)
+  
+  if(any(is.na(patrol.id))){
+    stop('NA values detected in ',names(patrols@data)[2],' column.  Cannot identify unique patrols!!!')
+  }
+  
   for(i in patrol.id){
     setTxtProgressBar(txtProgressBar(min = 0,max = length(patrol.id),style = 3,width = 20),value = prgs)
     ## Subset single patrol
-    patrol <- subset(patrols,Patrol_ID == i)
+    patrol <- subset.patrols(patrols,i)
     ## Load single patrol info into lattice
     patrol.cover <- over(cellLattice,patrol)
     if(NROW(patrol.cover) > 1){ ## Skip if patrol was outside of lattice
@@ -131,7 +136,9 @@ patrolVisitsPerCell <- function(patrols, cellLattice,cellType,zone){
   names(visits.table) <- c('fID','visits')
   
   temp.data <- base::merge(cellLattice@data,visits.table,by = 'fID',all.x = T)
-  temp.data$visits[which(is.na(temp.data$visits))] <- 0
+  if(any(is.na(temp.data$visits))){
+    temp.data$visits[which(is.na(temp.data$visits))] <- 0
+  }
   cellLattice@data <- temp.data
   
   return(cellLattice)
@@ -181,13 +188,14 @@ distancePatrolled <- function(patrols, cellLattice){
   ## Make empty results table
   distancePatrolled <- data.frame(fID = vector(mode = 'character'),distance = vector(mode = 'numeric'))
   ## Loop through each patrol (saves memory for analyses with many patrols)
-  patrol.ids <- unique(patrols@data$Patrol_ID)
+  names(patrols@data)
+  patrol.ids <- unique.patrols(patrols)
   prgs <- 1
   
   message('Chopping patrols with the grid/lattice and measuring the resulting distances...')
   for(i in patrol.ids){
     setTxtProgressBar(txtProgressBar(min = 0,max = length(patrol.ids),style = 3,width = 20),value = prgs)
-    patrol.sub <- subset(patrols,Patrol_ID == i)
+    patrol.sub <- subset.patrols(patrols,i)
       
     # Split lines by patrol lines according to grid/lattice
     lines.split <- gIntersection(cellLattice,
@@ -381,6 +389,23 @@ loadShapeFile <- function(shapeFiles,tempFolder = "./temp"){
   ## Load shape file into memory
   map <- readOGR(dsn=tempFolder,
                  layer=substr(shapeFiles[1],1,
-                              nchar(shapeFiles[1])-4))
+                              nchar(shapeFiles[1])-4),
+                 encoding = 'utf8' , # Necessary for reading column names with special characters
+                 use_iconv = T)      # Necessary for reading column names with special characters
   return(map)
+}
+
+## Extract unique patrol IDs (using column index 2)
+unique.patrols <- function(patrols){
+  return(
+    unique(
+      as.character(
+        patrols@data[,2])))
+}
+
+## Subset a specific patrol ID (omit NA patrols)
+subset.patrols <- function(patrols,id){
+  return(
+    na.omit(patrols[which(as.character(patrols@data[,2]) == id),])
+  )
 }

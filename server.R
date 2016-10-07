@@ -5,8 +5,12 @@ require(rgeos)
 require(shiny)
 require(XML)
 require(maptools)
+require(RColorBrewer)
 ## Source external functions
 source("helperFunctions.R",local = T)
+
+## Override default maximum file size
+options(shiny.maxRequestSize=30*1024^2) 
 
 shinyServer(function(input, output) {
   
@@ -82,16 +86,21 @@ shinyServer(function(input, output) {
     output$plot1 <- renderPlot(spplot(results[[1]],
                                       zcol = "distance",
                                       main = "Distance Patrolled per Cell",
-                                      scales = list(draw = T)))
+                                      scales = list(draw = T),
+                                      col.regions = colorRampPalette(brewer.pal(9,'Blues'))(101)))
     output$plot2 <- renderPlot(spplot(results[[1]],
                                       zcol = "visits",
                                       scales = list(draw = T),
-                                      main = "Visits by patrols"))
+                                      main = "Visits by patrols",
+                                      col.regions = colorRampPalette(brewer.pal(9,'Blues'))(101)))
     output$plot3 <- renderPlot(spplot(results[[1]],
                                       zcol = "Percent.coverage",
                                       scales = list(draw = T),
                                       main = "Percent Coverage per
-                                              Region"))
+                                              Region",
+                                      colorkey=list(at=0:100),
+                                      at = 0:100,
+                                      col.regions = colorRampPalette(brewer.pal(9,'Blues'))(101)))
   })
   
   observeEvent(input$download, {
