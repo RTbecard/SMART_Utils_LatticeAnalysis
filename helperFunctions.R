@@ -25,7 +25,7 @@ createLattice <- function(map,cellDiameter,cellType,zone,regionName,cellLattice)
     ext@xmin <- ext@xmin - cellDiameter
     ext@xmax <- ext@xmax + cellDiameter
     ext@ymin <- ext@ymin - cellDiameter
-    ext@xmax <- ext@xmax + cellDiameter
+    ext@ymax <- ext@ymax + cellDiameter
     bb <- as(ext, "SpatialPolygons")
     proj4string(bb) <- proj@projargs
     
