@@ -91,11 +91,14 @@ shinyServer(function(input, output) {
                                         scales = list(draw = T),
                                         col.regions = colorRampPalette(brewer.pal(9,'Blues'))(101),
                                         lwd = 0.3))
+      browser()
+      colors <- colorRampPalette(brewer.pal(9,'Blues'))(101)
+      colors[1] <- '#888888'
       output$plot2 <- renderPlot(spplot(results[[1]],
                                         zcol = "visits",
                                         scales = list(draw = T),
                                         main = "Visits by patrols",
-                                        col.regions = colorRampPalette(brewer.pal(9,'Blues'))(101),
+                                        col.regions = colors,
                                         lwd = 0.3))
       output$plot3 <- renderPlot(spplot(results[[1]],
                                         zcol = "Percent.coverage",
