@@ -44,8 +44,7 @@ shinyUI(fluidPage(
                   for hexagon lattice, meters for square grid)")),
       p('Hexagon analysis will create a hexagon lattice using a lat/lon projection.  Square Grid will use UTM projections for which you have to supply the grid number, and user defined grids will use the projection defined in the user supplied shape file.'),
       actionButton("analyse","Start Analysis"),
-      textInput("filename", "Output file name"),
-      actionButton("download","Download Results")
+      downloadButton("download","Download Results")
     ),
 
     # Show a plot of the generated distribution
@@ -57,7 +56,9 @@ shinyUI(fluidPage(
                    plotOutput("plot2",width = "700px",height = "700px")),
           tabPanel("Region % Patrol Coverage",
                    plotOutput("plot3",width = "700px",height = "700px"))
-          )
+          ),
+      shinyjs::useShinyjs(),
+      verbatimTextOutput("console")
       )
     )
   )
