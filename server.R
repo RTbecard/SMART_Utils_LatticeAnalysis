@@ -91,7 +91,6 @@ shinyServer(function(input, output) {
                                         scales = list(draw = T),
                                         col.regions = colorRampPalette(brewer.pal(9,'Blues'))(101),
                                         lwd = 0.3))
-      browser()
       colors <- colorRampPalette(brewer.pal(9,'Blues'))(101)
       colors[1] <- '#888888'
       output$plot2 <- renderPlot(spplot(results[[1]],
